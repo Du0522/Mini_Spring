@@ -4,6 +4,8 @@ import java.io.File;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -13,6 +15,7 @@ public class ApplicationContext {
 
     private ConcurrentHashMap<String, Object> singletonObjects = new ConcurrentHashMap<>(); //单例池
     private ConcurrentHashMap<String, BeanDefinition> beanDefinitionMap = new ConcurrentHashMap<>();
+    private List<BeanPostProcessor> beanPostProcessorList = new ArrayList<>();
 
     public ApplicationContext(Class configClass) {
         this.configClass = configClass;
@@ -48,8 +51,24 @@ public class ApplicationContext {
                 }
             }
 
+            //Aware回调
             if (instance instanceof BeanNameAware){
                 ((BeanNameAware)instance).setBeanName(beanName);
+            }
+
+            //初始化前自定义处理
+            for (BeanPostProcessor beanPostProcessor : beanPostProcessorList) {
+                instance = beanPostProcessor.postProcessBeforeInitialization(instance, beanName);
+            }
+
+            //初始化
+            if (instance instanceof InitializingBean){
+                ((InitializingBean)instance).afterPropertiesSet();
+            }
+
+            //初始化后自定义处理
+            for (BeanPostProcessor beanPostProcessor : beanPostProcessorList) {
+                instance = beanPostProcessor.postProcessAfterInitialization(instance, beanName);
             }
 
             return instance;
@@ -60,6 +79,8 @@ public class ApplicationContext {
         } catch (InvocationTargetException e) {
             throw new RuntimeException(e);
         } catch (NoSuchMethodException e) {
+            throw new RuntimeException(e);
+        } catch (Exception e) {
             throw new RuntimeException(e);
         }
     }
@@ -87,8 +108,16 @@ public class ApplicationContext {
 
                     try {
                         Class<?> clazz = classLoader.loadClass(className);
+                        // 表示当前这个类是一个Bean
                         if (clazz.isAnnotationPresent(Component.class)) {
-                            // 表示当前这个类是一个Bean
+
+                            //实现了BeanPostProcessor的bean
+                            if (BeanPostProcessor.class.isAssignableFrom(clazz)) {
+                                BeanPostProcessor instance = (BeanPostProcessor) clazz.getDeclaredConstructor().newInstance();
+                                beanPostProcessorList.add(instance);
+                            }
+
+
                             // 解析类--->BeanDefinition
                             Component componentAnnotation = clazz.getDeclaredAnnotation(Component.class);
                             String beanName = componentAnnotation.value();
@@ -106,6 +135,14 @@ public class ApplicationContext {
                         }
                     } catch (ClassNotFoundException e) {
                         e.printStackTrace();
+                    } catch (InvocationTargetException e) {
+                        throw new RuntimeException(e);
+                    } catch (InstantiationException e) {
+                        throw new RuntimeException(e);
+                    } catch (IllegalAccessException e) {
+                        throw new RuntimeException(e);
+                    } catch (NoSuchMethodException e) {
+                        throw new RuntimeException(e);
                     }
 
                 }
