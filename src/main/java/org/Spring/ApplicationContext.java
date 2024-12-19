@@ -1,7 +1,7 @@
 package org.Spring;
 
 import java.io.File;
-import java.lang.annotation.Annotation;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
 import java.util.Map;
@@ -25,7 +25,7 @@ public class ApplicationContext {
             String beanName = entry.getKey();
             BeanDefinition beanDefinition = entry.getValue();
             if (beanDefinition.getScope().equals("singleton")) {
-                Object bean = createBean(beanDefinition); // 单例Bean
+                Object bean = createBean(beanName, beanDefinition); // 单例Bean
                 singletonObjects.put(beanName, bean);
             }
         }
@@ -33,11 +33,25 @@ public class ApplicationContext {
 
     }
 
-    public Object createBean(BeanDefinition beanDefinition) {
+    public Object createBean(String beanName, BeanDefinition beanDefinition) {
         Class clazz = beanDefinition.getClazz();
         try {
             //调用该类的无参构造函数创建类的一个实例
             Object instance = clazz.getDeclaredConstructor().newInstance();
+
+            // 依赖注入
+            for (Field declaredField : clazz.getDeclaredFields()) {
+                if (declaredField.isAnnotationPresent(Autowired.class)) {
+                    Object bean = getBean(declaredField.getName());
+                    declaredField.setAccessible(true);
+                    declaredField.set(instance, bean);
+                }
+            }
+
+            if (instance instanceof BeanNameAware){
+                ((BeanNameAware)instance).setBeanName(beanName);
+            }
+
             return instance;
         } catch (InstantiationException e) {
             throw new RuntimeException(e);
@@ -107,7 +121,7 @@ public class ApplicationContext {
                 Object bean = singletonObjects.get(beanName);
                 return bean;
             } else {
-                Object bean = createBean(beanDefinition);
+                Object bean = createBean(beanName, beanDefinition);
                 return bean;
             }
         } else {
